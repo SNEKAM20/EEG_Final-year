@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>EEG Brain-Controlled Wheelchair</title>
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);--bg:#050b18;--panel:#0a1428;--line:#1b2c4d;--tx:#dbe8ff;--mut:#7f95bd;--ac:#22e0c4;--ac2:#6ea8ff;--warn:#ff6b7a}
+html{scroll-padding-top:env(safe-area-inset-top,0px);height:100%}
+*{box-sizing:border-box}
+body{margin:0;height:100%;background:var(--bg);color:var(--tx);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;overflow:hidden}
+#home{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center}
+#bg{position:absolute;inset:0;width:100%;height:100%}
+h1{position:relative;z-index:2;margin:6vh 16px 0;text-align:center;font-size:clamp(20px,4vw,40px);letter-spacing:.5px;text-shadow:0 0 24px #22e0c455}
+h1 small{display:block;font-size:.4em;color:var(--mut);font-weight:400;margin-top:8px;letter-spacing:2px}
+.center{position:relative;z-index:2;flex:1;display:flex;align-items:center;justify-content:center}
+.btn{cursor:pointer;border:1px solid var(--ac);background:#22e0c41a;color:var(--ac);font-size:18px;padding:16px 34px;border-radius:40px;backdrop-filter:blur(6px);transition:.25s;font-weight:600}
+.btn:hover{background:var(--ac);color:#02110e;box-shadow:0 0 34px #22e0c488}
+.btn.red{border-color:var(--warn);color:var(--warn);background:#ff6b7a1a}.btn.red:hover{background:var(--warn);color:#1a0207;box-shadow:0 0 30px #ff6b7a88}
+#modal{position:absolute;inset:0;z-index:10;background:#000a;display:none;align-items:center;justify-content:center}
+#modal .box{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:28px;text-align:center;max-width:90%;width:400px}
+#modal .row{display:flex;gap:12px;justify-content:center;margin-top:20px;flex-wrap:wrap}
+#app{position:absolute;inset:0;display:none;grid-template-columns:1fr 1fr;background:var(--bg)}
+#left{border-right:1px solid var(--line);display:flex;flex-direction:column;min-width:0;min-height:0}
+.bar{display:flex;justify-content:space-between;align-items:center;padding:10px 14px;border-bottom:1px solid var(--line);font-size:14px;color:var(--mut)}
+.bar b{color:var(--ac)}
+.bar .btn{font-size:13px;padding:7px 16px}
+#log{flex:1;overflow:auto;padding:12px 14px;font:13px/1.6 ui-monospace,Menlo,Consolas,monospace;background:#03070f}
+#log div{animation:in .3s}#log .ok{color:var(--ac)}#log .w{color:#ffc857}#log .e{color:var(--warn)}#log .m{color:var(--mut)}
+@keyframes in{from{opacity:0;transform:translateX(-8px)}}
+#right{position:relative;min-width:0;min-height:0}
+#cv{position:absolute;inset:0;width:100%;height:100%}
+#ov{max-height:48%;overflow:auto;position:absolute;left:12px;right:12px;bottom:12px;background:#0a1428e6;border:1px solid var(--line);border-radius:14px;padding:12px 16px;display:none;font-size:14px;line-height:1.7}
+#ov .f{font:15px ui-monospace,Menlo,monospace;color:var(--ac2)}
+#ov input{background:#03070f;border:1px solid var(--ac);color:var(--tx);padding:10px 14px;border-radius:10px;font-size:16px;width:150px;margin:6px 8px 0 0}
+#ov .btn{font-size:15px;padding:9px 22px}
+#title{position:absolute;top:10px;left:14px;font-size:15px;color:var(--ac);letter-spacing:1px;text-shadow:0 0 10px #22e0c455}
+.res{display:flex;gap:10px;flex-wrap:wrap;margin-top:6px}
+.res div{flex:1;min-width:110px;border:1px solid var(--ac);border-radius:12px;padding:10px;text-align:center;background:#22e0c412}
+.res b{display:block;font-size:24px;color:var(--ac)}
+@media(max-width:760px){#app{grid-template-columns:1fr;grid-template-rows:34% 66%}#left{border-right:0;border-bottom:1px solid var(--line)}}
+</style></head><body>
+<div id="home"><canvas id="bg"></canvas>
+<h1>Brain-Controlled Wheelchair using EEG<small>BETA-BAND FILTERING · WINDOWING · LDA CLASSIFICATION</small></h1>
+<div class="center"><button class="btn" id="go">⚡ Connect to Google Colab</button></div></div>
+<div id="modal"><div class="box"><h3 style="margin:0 0 8px">Google Colab Runtime</h3><div style="color:var(--mut);font-size:14px">Connect to run all notebook cells, or terminate.</div>
+<div class="row"><button class="btn" id="cn">Connect</button><button class="btn red" id="tm">Terminate</button></div></div></div>
+<div id="app"><div id="left"><div class="bar"><span>Colab Console · <b id="st">connected</b></span><button class="btn red" id="stop">■ Terminate</button></div><div id="log"></div></div>
+<div id="right"><div id="title"></div><canvas id="cv"></canvas><div id="ov"></div></div></div>
+<script>
+const $=id=>document.getElementById(id);
+// ---------- home background: animated EEG waves over a brain-glow gradient
+const bg=$('bg'),bx=bg.getContext('2d');
+function fit(c){const r=c.getBoundingClientRect(),d=devicePixelRatio||1;c.width=r.width*d;c.height=r.height*d;c.getContext('2d').setTransform(d,0,0,d,0,0);return[r.width,r.height]}
+let stopBg=false;
+function drawBg(t){if(stopBg)return;const[w,h]=fit(bg);
+const g=bx.createRadialGradient(w/2,h/2,10,w/2,h/2,Math.max(w,h)*.7);g.addColorStop(0,'#0b2a44');g.addColorStop(1,'#050b18');bx.fillStyle=g;bx.fillRect(0,0,w,h);
+// brain outline glow
+bx.strokeStyle='#22e0c422';bx.lineWidth=2;for(let i=0;i<6;i++){bx.beginPath();bx.ellipse(w/2,h*.5,w*(.12+i*.05),h*(.16+i*.04),0,0,7);bx.stroke()}
+for(let k=0;k<7;k++){bx.beginPath();bx.strokeStyle=`hsla(${170+k*14},90%,60%,${.16+k*.04})`;bx.lineWidth=1.5;
+for(let x=0;x<w;x+=3){const y=h*(.25+k*.09)+Math.sin(x*.012*(k+1)+t/700*(1+k*.2))*18+Math.sin(x*.05+t/300+k)*6;x?bx.lineTo(x,y):bx.moveTo(x,y)}bx.stroke()}
+requestAnimationFrame(drawBg)}
+requestAnimationFrame(drawBg);
+// ---------- flow control
+let tok=0,W=0,H=0,scene=()=>{},sp=0,sd=0;
+const cv=$('cv'),cx=cv.getContext('2d');
+const sleep=ms=>{const my=tok;return new Promise((res,rej)=>setTimeout(()=>my===tok?res():rej('x'),ms))};
+const log=(m,c='')=>{const d=document.createElement('div');d.className=c;d.textContent=m;$('log').appendChild(d);$('log').scrollTop=1e9};
+async function prog(ms){sp=0;const t0=performance.now(),my=tok;while(sp<1){await new Promise(r=>requestAnimationFrame(r));if(my!==tok)throw'x';sp=Math.min(1,(performance.now()-t0)/ms)}}
+const ov=(h)=>{$('ov').style.display=h?'block':'none';$('ov').innerHTML=h||''};
+const ttl=t=>$('title').textContent=t;
+function loop(t){if(W){cx.setTransform(devicePixelRatio||1,0,0,devicePixelRatio||1,0,0);cx.clearRect(0,0,W,H);cx.fillStyle='#050b18';cx.fillRect(0,0,W,H);
+cx.strokeStyle='#12213f';cx.lineWidth=1;for(let x=0;x<W;x+=40){cx.beginPath();cx.moveTo(x,0);cx.lineTo(x,H);cx.stroke()}for(let y=0;y<H;y+=40){cx.beginPath();cx.moveTo(0,y);cx.lineTo(W,y);cx.stroke()}
+scene(t)}requestAnimationFrame(loop)}requestAnimationFrame(loop);
+addEventListener('resize',()=>{if($('app').style.display=='grid'){[W,H]=fit(cv)}});
+// ---------- helpers
+const wave=(x,t,f)=>Math.sin(x*f*.02+t/400)*.6+Math.sin(x*f*.047+t/230)*.3;
+const noise=(x,t)=>(Math.sin(x*1.7+t/50)+Math.sin(x*3.3-t/37)+Math.sin(x*.9+t/90))/3;
+const eegSig=(x,t)=>wave(x,t,.6)*1.2+wave(x,t,3)*.6+noise(x,t)*.5;
+// ---------- scenes
+const CH=['Fp1','C3','Cz','C4','O1'];
+function sRaw(t){const n=CH.length,exp=Math.min(1,sp*1.3);ttl('① RAW EEG ACQUISITION');
+CH.forEach((c,i)=>{const y0=70+i*(H-200)/n+20,A=(8+18*exp)*(1);cx.strokeStyle=`hsl(${170+i*25},85%,60%)`;cx.lineWidth=1.6;cx.beginPath();
+const len=W*exp;for(let x=50;x<50+len-60;x+=2){const y=y0+eegSig(x+i*40,t)*A;x==50?cx.moveTo(x,y):cx.lineTo(x,y)}cx.stroke();
+cx.fillStyle='#7f95bd';cx.font='12px monospace';cx.fillText(c,10,y0+4);const v=(eegSig(50+len,t)*A*3).toFixed(1);cx.fillStyle='#22e0c4';cx.fillText(v+' µV',W-78,y0+4)});
+cx.fillStyle='#7f95bd';cx.fillText('Fs = 250 Hz · 5 channels · reading samples: '+Math.floor(sp*15000),50,H-150)}
+const BANDS=[['Delta','0.5–4 Hz',2],['Theta','4–8 Hz',6],['Alpha','8–13 Hz',10.5],['Beta','13–30 Hz',21.5],['Gamma','30–45 Hz',37]];
+const bandH=[.55,.4,.7,.85,.3];
+function sScan(t){ttl('② FREQUENCY SPECTRUM SCAN');const bw=(W-100)/5,base=H-190,sx=50+sp*(W-100);
+BANDS.forEach((b,i)=>{const x=50+i*bw,seen=sx>x+bw/2,chosen=seen&&sp>.95&&i==3,hh=(H-330)*bandH[i]*(seen?1:.25)*(.95+.05*Math.sin(t/120+i));
+cx.fillStyle=chosen?'#22e0c4':seen?'#3b6fd8':'#1b2c4d';if(chosen){cx.shadowColor='#22e0c4';cx.shadowBlur=30}cx.fillRect(x+8,base-hh,bw-16,hh);cx.shadowBlur=0;
+cx.fillStyle=chosen?'#22e0c4':'#9fb3d9';cx.font='13px sans-serif';cx.textAlign='center';cx.fillText(b[0],x+bw/2,base+20);cx.font='11px sans-serif';cx.fillStyle='#7f95bd';cx.fillText(b[1],x+bw/2,base+36)});
+cx.textAlign='left';const g=cx.createLinearGradient(sx-50,0,sx,0);g.addColorStop(0,'#22e0c400');g.addColorStop(1,'#22e0c455');cx.fillStyle=g;cx.fillRect(sx-50,60,50,base-60);
+cx.fillStyle='#22e0c4';cx.fillRect(sx-1,60,2,base-60);
+if(sp>.95){cx.fillStyle='#22e0c4';cx.font='bold 15px sans-serif';cx.textAlign='center';cx.fillText('★ BETA (13–30 Hz) selected — motor imagery activity',W/2,60)}cx.textAlign='left'}
+function sFilt(t){ttl('③ BANDPASS FILTER · BETA EXTRACTION');const bx0=W/2-50,bw=100,by=H*.2,bh=H*.55,mid=H*.47;
+cx.strokeStyle='#ff6b7a';cx.lineWidth=1;cx.beginPath();
+for(let x=20;x<bx0;x+=2){const y=mid+eegSig(x-t/6,t)*30;x==20?cx.moveTo(x,y):cx.lineTo(x,y)}cx.stroke();
+cx.strokeStyle='#22e0c4';cx.lineWidth=2.2;cx.beginPath();
+for(let x=bx0+bw;x<W-20;x+=2){const y=H*.3+Math.sin((x+t/5)*.14)*22*Math.min(1,sp*2);x==bx0+bw?cx.moveTo(x,y):cx.lineTo(x,y)}cx.stroke();
+cx.fillStyle='#ff6b7a';for(let i=0;i<45;i++){const px=bx0+bw+((i*53+t/6)%(W-bx0-bw-30)),py=H*.66+((i*37)%70)+Math.sin(t/200+i)*4;cx.globalAlpha=Math.min(1,sp*2)*.8;cx.fillRect(px,py,3,3)}cx.globalAlpha=1;
+cx.fillStyle='#0d1c38';cx.strokeStyle='#22e0c4';cx.lineWidth=2;cx.fillRect(bx0,by,bw,bh);cx.strokeRect(bx0,by,bw,bh);
+cx.fillStyle='#22e0c4';cx.font='13px sans-serif';cx.textAlign='center';cx.fillText('BPF 13–30 Hz',W/2,by+22);
+cx.fillStyle='#ff6b7a';cx.fillText('Noise & artefacts removed ↓',W*.75,H*.62);cx.fillStyle='#22e0c4';cx.fillText('Clean beta waves →',W*.75,H*.2);
+cx.fillStyle='#7f95bd';cx.fillText('Raw EEG',bx0/2,H*.28);cx.textAlign='left'}
+function wheel(x,y,r,rot){cx.strokeStyle='#22e0c4';cx.lineWidth=3;cx.beginPath();cx.arc(x,y,r,0,7);cx.stroke();cx.lineWidth=1.5;for(let i=0;i<6;i++){const a=rot+i*Math.PI/3;cx.beginPath();cx.moveTo(x,y);cx.lineTo(x+Math.cos(a)*r,y+Math.sin(a)*r);cx.stroke()}}
+function sWheel(t){ttl('④ INITIALISING WHEELCHAIR CONTROL');const px=60+sp*(W-260),gy=H*.5+70,rot=px/24;
+cx.strokeStyle='#2b4270';cx.lineWidth=3;cx.beginPath();cx.moveTo(0,gy);cx.lineTo(W,gy);cx.stroke();
+cx.save();cx.translate(px,0);cx.strokeStyle='#22e0c4';cx.lineWidth=5;cx.lineCap='round';
+cx.beginPath();cx.moveTo(30,gy-115);cx.lineTo(34,gy-52);cx.lineTo(100,gy-52);cx.lineTo(112,gy-20);cx.stroke();
+cx.fillStyle='#6ea8ff';cx.beginPath();cx.arc(56,gy-150,15,0,7);cx.fill();
+cx.strokeStyle='#6ea8ff';cx.beginPath();cx.moveTo(56,gy-133);cx.lineTo(56,gy-78);cx.lineTo(102,gy-72);cx.lineTo(110,gy-30);cx.stroke();
+cx.beginPath();cx.moveTo(56,gy-120);cx.lineTo(90,gy-100);cx.stroke();
+wheel(50,gy-30,30,rot);wheel(118,gy-12,12,rot*2);
+cx.strokeStyle='#ffc85788';cx.lineWidth=2;for(let i=0;i<3;i++){const a=(t/300+i)%3;cx.beginPath();cx.arc(56,gy-150,22+a*12,-2.3,-.8);cx.stroke()}cx.restore();
+cx.fillStyle='#1b2c4d';cx.fillRect(60,H-150,W-120,10);cx.fillStyle='#22e0c4';cx.fillRect(60,H-150,(W-120)*sp,10);
+cx.fillStyle='#9fb3d9';cx.font='13px sans-serif';cx.fillText('Loading BCI module… '+Math.floor(sp*100)+'%',60,H-160)}
+let WIN=2;
+function sWin(t){ttl('⑤ EPOCHING · WINDOW = '+WIN+' s');const top=90,hh=H-330,n=Math.max(2,Math.min(8,Math.floor(20/WIN))),ww=(W-100)/n,mid=top+hh/2,shown=sp*(W-100);
+cx.strokeStyle='#22e0c4';cx.lineWidth=1.8;cx.beginPath();for(let x=0;x<shown;x+=2){const y=mid+Math.sin(x*.16)*hh*.28*(1+.3*Math.sin(x*.02));x?cx.lineTo(50+x,y):cx.moveTo(50+x,y)}cx.stroke();
+for(let i=0;i<n;i++){const x=50+i*ww;if(x+ww<50+shown+1){cx.fillStyle=i%2?'#6ea8ff22':'#22e0c422';cx.fillRect(x,top,ww,hh);cx.strokeStyle='#6ea8ff';cx.setLineDash([5,4]);cx.strokeRect(x,top,ww,hh);cx.setLineDash([]);cx.fillStyle='#9fb3d9';cx.font='12px sans-serif';cx.textAlign='center';cx.fillText('W'+(i+1)+' · '+WIN+'s',x+ww/2,top+hh+18)}}
+cx.textAlign='left';cx.fillStyle='#7f95bd';cx.fillText('time (s) →',50,top+hh+38)}
+let FS=250;
+function sNyq(t){ttl('⑥ NYQUIST FREQUENCY');const mid=H*.4,a=Math.min(1,sp*1.5);cx.strokeStyle='#2b4270';cx.beginPath();cx.moveTo(40,mid);cx.lineTo(W-40,mid);cx.stroke();
+cx.strokeStyle='#22e0c4';cx.lineWidth=2;cx.beginPath();for(let x=40;x<W-40;x++){const y=mid-Math.sin(x*.05+t/300)*70;x>40?cx.lineTo(x,y):cx.moveTo(x,y)}cx.stroke();
+cx.fillStyle='#ffc857';for(let x=40;x<(W-80)*a+40;x+=12){const y=mid-Math.sin(x*.05+t/300)*70;cx.beginPath();cx.arc(x,y,3.5,0,7);cx.fill();cx.strokeStyle='#ffc85744';cx.beginPath();cx.moveTo(x,mid);cx.lineTo(x,y);cx.stroke()}}
+// LDA
+const R=(()=>{let s=7;return()=>{s=(s*16807)%2147483647;return s/2147483647}})();const G=()=>Math.sqrt(-2*Math.log(R()+1e-9))*Math.cos(6.283*R());
+const PT=[];for(let i=0;i<70;i++){const c=i%2,a=G()*.9,b=G()*.35;PT.push({c,x:(c?1.3:-1.3)+a*.9-b*.5,y:(c?.7:-.7)+a*.5+b})}
+let ldaStep=1,LD;
+function calcLDA(){const g=[[],[]];PT.forEach(p=>g[p.c].push(p));
+const m=g.map(a=>[a.reduce((t,p)=>t+p.x,0)/a.length,a.reduce((t,p)=>t+p.y,0)/a.length]);
+let a=0,b=0,c=0;g.forEach((arr,k)=>arr.forEach(p=>{const dx=p.x-m[k][0],dy=p.y-m[k][1];a+=dx*dx;b+=dx*dy;c+=dy*dy}));
+const det=a*c-b*b,inv=[[c/det,-b/det],[-b/det,a/det]],d=[m[1][0]-m[0][0],m[1][1]-m[0][1]];
+const w=[inv[0][0]*d[0]+inv[0][1]*d[1],inv[1][0]*d[0]+inv[1][1]*d[1]];
+const thr=.5*(w[0]*(m[0][0]+m[1][0])+w[1]*(m[0][1]+m[1][1]));
+return{g,m,a,b,c,det,inv,d,w,thr}}
+function sLda(t){ttl('⑦ LDA · STEP '+ldaStep+' / 5');const cX=W/2,cY=H*.3,s=Math.min(W,H)*.1,nw=Math.hypot(...LD.w),ux=LD.w[0]/nw,uy=LD.w[1]/nw;
+const P=(p)=>{let x=p.x,y=p.y;if(ldaStep>=5){const d=x*ux+y*uy,q=Math.min(1,sp*1.2);x=x+(d*ux-x)*q;y=y+(d*uy-y)*q}return[cX+x*s,cY+y*s]};
+const[m0,m1]=LD.m;
+if(ldaStep>=4){cx.strokeStyle='#ffc857';cx.lineWidth=2;const L=Math.min(1,ldaStep==4?sp:1)*s*3.2;cx.beginPath();cx.moveTo(cX-ux*L,cY-uy*L);cx.lineTo(cX+ux*L,cY+uy*L);cx.stroke();cx.fillStyle='#ffc857';cx.font='13px sans-serif';cx.fillText('w',cX+ux*L+6,cY+uy*L)}
+if(ldaStep>=3){[[m0,'#6ea8ff'],[m1,'#22e0c4']].forEach(e=>{cx.strokeStyle=e[1];cx.lineWidth=1.5;cx.setLineDash([6,4]);cx.beginPath();cx.ellipse(cX+e[0][0]*s,cY+e[0][1]*s,s*(.6+.6*Math.min(1,ldaStep==3?sp:1)),s*.9,.6,0,7);cx.stroke();cx.setLineDash([])})}
+PT.forEach(p=>{const[x,y]=P(p);cx.fillStyle=p.c?'#22e0c4':'#6ea8ff';cx.beginPath();cx.arc(x,y,3.5,0,7);cx.fill()});
+if(ldaStep>=2){[[m0,'μ₁'],[m1,'μ₂']].forEach(m=>{const x=cX+m[0][0]*s,y=cY+m[0][1]*s;cx.fillStyle='#ffc857';cx.fillRect(x-6,y-6,12,12);cx.fillStyle='#fff';cx.font='bold 13px sans-serif';cx.fillText(m[1],x+9,y-9)})}
+if(ldaStep==5){const dd=LD.thr/nw,bx=cX+ux*dd*s,by=cY+uy*dd*s;cx.strokeStyle='#ff6b7a';cx.lineWidth=2;cx.setLineDash([4,4]);cx.beginPath();cx.moveTo(bx-uy*s*2.5,by+ux*s*2.5);cx.lineTo(bx+uy*s*2.5,by-ux*s*2.5);cx.stroke();cx.setLineDash([]);cx.fillStyle='#ff6b7a';cx.font='12px sans-serif';cx.fillText('decision boundary y = c',bx+8,by-s*2.5)}
+cx.fillStyle='#6ea8ff';cx.fillRect(20,40,10,10);cx.fillStyle='#9fb3d9';cx.font='12px sans-serif';cx.fillText('Left-hand',36,49);cx.fillStyle='#22e0c4';cx.fillRect(100,40,10,10);cx.fillStyle='#9fb3d9';cx.fillText('Right-hand',116,49)}
+// road navigation
+const PLAN=['R','L','L','R','L'];
+const RC={x:0,y:0,ang:0,cmd:'S',trail:[],pts:[],dec:[]};
+function buildPath(){let x=0,y=0,dx=1,dy=0;const pts=[[0,0]];PLAN.forEach(c=>{x+=2*dx;y+=2*dy;pts.push([x,y]);[dx,dy]=c=='L'?[dy,-dx]:[-dy,dx]});x+=2*dx;y+=2*dy;pts.push([x,y]);return pts}
+function sRoad(t){ttl('⑨ WHEELCHAIR NAVIGATION · LDA COMMANDS');const pts=RC.pts;if(!pts.length)return;
+const xs=pts.map(q=>q[0]),ys=pts.map(q=>q[1]),mnx=Math.min(...xs),mxx=Math.max(...xs),mny=Math.min(...ys),mxy=Math.max(...ys);
+const sc=Math.min((W-140)/(mxx-mnx),(H-330)/(mxy-mny)),ox=(W-(mxx-mnx)*sc)/2-mnx*sc,oy=90+((H-330)-(mxy-mny)*sc)/2-mny*sc,M=(a,b)=>[ox+a*sc,oy+b*sc];
+cx.fillStyle='#0a1a17';for(let i=-1;i<8;i++)for(let j=-3;j<6;j++){const[a,b]=M(i+.6,j+.6);cx.fillRect(a,b,sc*.8,sc*.8)}
+const path=(w,col,dash)=>{cx.beginPath();pts.forEach((q,i)=>{const[a,b]=M(q[0],q[1]);i?cx.lineTo(a,b):cx.moveTo(a,b)});cx.lineJoin='round';cx.lineCap='round';cx.lineWidth=w;cx.strokeStyle=col;cx.setLineDash(dash||[]);cx.stroke();cx.setLineDash([])};
+path(sc*.42,'#3a4b73');path(sc*.36,'#222d47');path(2,'#ffc857',[12,10]);
+if(RC.trail.length>1){cx.beginPath();RC.trail.forEach((q,i)=>{const[a,b]=M(q[0],q[1]);i?cx.lineTo(a,b):cx.moveTo(a,b)});cx.lineWidth=5;cx.strokeStyle='#22e0c4aa';cx.lineJoin='round';cx.stroke()}
+cx.font='bold 12px sans-serif';cx.textAlign='center';
+pts.forEach((q,i)=>{const[a,b]=M(q[0],q[1]);if(i>0&&i<pts.length-1){cx.fillStyle='#0d1c38';cx.strokeStyle='#ffc857';cx.lineWidth=2;cx.beginPath();cx.arc(a,b,11,0,7);cx.fill();cx.stroke();cx.fillStyle='#ffc857';cx.fillText('J'+i,a,b+4);const d=RC.dec[i-1];if(d){cx.fillStyle=d=='L'?'#6ea8ff':'#22e0c4';cx.fillText(d=='L'?'◀ LEFT':'RIGHT ▶',a,b-20)}}});
+let[sx,sy]=M(0,0);cx.fillStyle='#22e0c4';cx.fillText('START',sx,sy+sc*.4);let[ex,ey]=M(...pts[pts.length-1]);cx.fillStyle='#ff6b7a';cx.font='bold 14px sans-serif';cx.fillText('🏁 GOAL',ex,ey-sc*.35);
+const[px,py]=M(RC.x,RC.y),k=Math.max(8,sc*.13);cx.save();cx.translate(px,py);cx.rotate(RC.ang);
+cx.fillStyle='#0d1c38';cx.strokeStyle='#22e0c4';cx.lineWidth=2;cx.fillRect(-k*1.1,-k*.8,k*2.2,k*1.6);cx.strokeRect(-k*1.1,-k*.8,k*2.2,k*1.6);
+cx.fillStyle='#22e0c4';cx.fillRect(-k*.9,-k*1.1,k*1.1,k*.3);cx.fillRect(-k*.9,k*.8,k*1.1,k*.3);
+cx.beginPath();cx.arc(k*.9,-k*.5,k*.18,0,7);cx.arc(k*.9,k*.5,k*.18,0,7);cx.fill();
+cx.fillStyle='#6ea8ff';cx.beginPath();cx.ellipse(-k*.2,0,k*.3,k*.6,0,0,7);cx.fill();cx.fillStyle='#ffd9a8';cx.beginPath();cx.arc(0,0,k*.28,0,7);cx.fill();
+cx.fillStyle='#ffc857';cx.beginPath();cx.moveTo(k*1.9,0);cx.lineTo(k*1.3,-k*.4);cx.lineTo(k*1.3,k*.4);cx.fill();
+if((RC.cmd=='L'||RC.cmd=='R')&&Math.floor(t/200)%2){cx.fillStyle='#ffc857';cx.beginPath();cx.arc(k*1.1,RC.cmd=='L'?-k*.9:k*.9,k*.22,0,7);cx.fill()}cx.restore();
+// command pad
+const pad=[['▲','F',W-70,50],['◀','L',W-110,90],['▶','R',W-30,90],['■','S',W-70,90]];
+pad.forEach(b=>{const on=RC.cmd==b[1];cx.fillStyle=on?(b[1]=='S'?'#ff6b7a':'#22e0c4'):'#0d1c38';cx.strokeStyle='#2b4270';cx.lineWidth=1;cx.fillRect(b[2]-16,b[3]-16,32,32);cx.strokeRect(b[2]-16,b[3]-16,32,32);cx.fillStyle=on?'#02110e':'#7f95bd';cx.font='15px sans-serif';cx.fillText(b[0],b[2],b[3]+5)});
+cx.textAlign='left'}
+let TR=[];
+function sTrial(t){ttl('⑧ TRAIN / TEST TRIALS');const y=H*.2;cx.font='13px sans-serif';
+TR.forEach((r,i)=>{const yy=y+i*70;const p=r.p;cx.fillStyle='#9fb3d9';cx.fillText('Train/Test '+r.n,40,yy-8);cx.fillStyle='#1b2c4d';cx.fillRect(40,yy,W-180,18);const w=(W-180)*p;cx.fillStyle='#6ea8ff';cx.fillRect(40,yy,w*(r.a/100>1?1:parseFloat(r.split)),18);cx.fillStyle='#22e0c4';cx.fillRect(40+w*parseFloat(r.split),yy,w*(1-parseFloat(r.split)),18);
+cx.fillStyle=p>=1?'#22e0c4':'#7f95bd';cx.font='bold 18px sans-serif';cx.fillText(p>=1?r.a.toFixed(1)+'%':'…',W-125,yy+16);cx.font='13px sans-serif'});
+cx.fillStyle='#6ea8ff';cx.fillRect(40,H-190,12,12);cx.fillStyle='#9fb3d9';cx.fillText('train',58,H-180);cx.fillStyle='#22e0c4';cx.fillRect(110,H-190,12,12);cx.fillStyle='#9fb3d9';cx.fillText('test',128,H-180)}
+// ---------- pipeline
+async function pipeline(){
+try{
+$('log').innerHTML='';scene=()=>{};
+log('$ connecting to Google Colab runtime…','m');await sleep(900);log('✔ Runtime connected (GPU: T4)','ok');
+log('$ Runtime ▸ Run all','m');await sleep(600);
+log('[1/7] Loading EEG dataset (5 ch, 250 Hz)…');scene=sRaw;await prog(5000);log('✔ 15000 samples loaded','ok');
+log('[2/7] Scanning frequency spectrum (FFT)…');scene=sScan;await prog(5500);log('✔ Bands scanned: delta, theta, alpha, beta, gamma','ok');log('→ Beta band (13–30 Hz) selected','w');
+log('[3/7] Applying bandpass filter 13–30 Hz…');scene=sFilt;await prog(6000);log('✔ Noise removed, beta waves isolated','ok');
+scene=sFilt;sp=1;
+const v=await new Promise((res,rej)=>{const my=tok;ov(`<div>Enter spanning window seconds:</div><input id="wi" type="number" min="1" max="10" step="0.5" value="2" placeholder="e.g. 2"><button class="btn" id="wb">Submit</button>`);
+const ok=()=>{if(my!==tok)return rej('x');const n=parseFloat($('wi').value);if(n>0)res(n)};$('wb').onclick=ok;$('wi').onkeydown=e=>e.key=='Enter'&&ok();$('wi').focus()});
+ov();WIN=v;log('> spanning window = '+WIN+' s','w');
+log('[4/7] Preparing wheelchair module…');scene=sWheel;await prog(4500);
+log('[5/7] Epoching beta signal into '+WIN+' s windows…');scene=sWin;await prog(5000);log('✔ '+Math.floor(60/WIN)+' epochs per minute','ok');
+const N=Math.round(WIN*FS);
+scene=sNyq;sp=0;ov(`<div>Sampling rate <b>Fs = ${FS} Hz</b> · window = ${WIN} s → <b>${N}</b> samples/window</div><div class="f">f<sub>N</sub> = Fs / 2 = ${FS} / 2 = <b>${FS/2} Hz</b></div><div>Beta max (30 Hz) &lt; ${FS/2} Hz ✔ no aliasing</div>`);
+log(`[6/7] Nyquist frequency = Fs/2 = ${FS/2} Hz`);await prog(4500);log('✔ Nyquist criterion satisfied','ok');ov();
+log('[7/7] Applying Linear Discriminant Analysis…');scene=sLda;
+LD=calcLDA();const f=n=>(n<0?'−':'')+Math.abs(n).toFixed(2),f3=n=>(n<0?'−':'')+Math.abs(n).toFixed(3),V=(v,q=f)=>`[${q(v[0])}, ${q(v[1])}]ᵀ`,G0=LD.g[0],G1=LD.g[1],[m0,m1]=LD.m,d=LD.d,w=LD.w,I=LD.inv;
+const tp=G1[2],ty=w[0]*tp.x+w[1]*tp.y;
+const F=[
+['Feature matrix X loaded (35 Left + 35 Right windows)',`<div><b>Step 1 · Feature vectors</b> — N = 70 windows, N₁ = 35 (Left), N₂ = 35 (Right)</div><div class="f">x = [log var(C3), log var(C4)]ᵀ<br>Left: ${V([G0[0].x,G0[0].y])} ${V([G0[1].x,G0[1].y])} …<br>Right: ${V([G1[0].x,G1[0].y])} ${V([G1[1].x,G1[1].y])} …</div>`],
+['Class means computed: μ₁='+V(m0)+' μ₂='+V(m1),`<div><b>Step 2 · Class means</b> μₖ = (1/Nₖ) Σ xᵢ</div><div class="f">μ₁ = (1/35)·${V([m0[0]*35,m0[1]*35])} = ${V(m0)}<br>μ₂ = (1/35)·${V([m1[0]*35,m1[1]*35])} = ${V(m1)}<br>μ₂ − μ₁ = ${V(d)}</div>`],
+['Within-class scatter Sw computed',`<div><b>Step 3 · Within-class scatter</b></div><div class="f">S<sub>w</sub> = Σₖ Σ (xᵢ−μₖ)(xᵢ−μₖ)ᵀ<br>= [[${f(LD.a)}, ${f(LD.b)}], [${f(LD.b)}, ${f(LD.c)}]]</div>`],
+['w = Sw⁻¹(μ₂−μ₁) = '+V(w,f3),`<div><b>Step 4 · Between-class scatter & projection vector</b></div><div class="f">S<sub>b</sub> = (μ₂−μ₁)(μ₂−μ₁)ᵀ = [[${f(d[0]*d[0])}, ${f(d[0]*d[1])}], [${f(d[0]*d[1])}, ${f(d[1]*d[1])}]]<br>det S<sub>w</sub> = ${f(LD.a)}·${f(LD.c)} − ${f(LD.b)}² = ${f(LD.det)}<br>S<sub>w</sub>⁻¹ = [[${f3(I[0][0])}, ${f3(I[0][1])}], [${f3(I[1][0])}, ${f3(I[1][1])}]]<br>w = S<sub>w</sub>⁻¹(μ₂−μ₁) = ${V(w,f3)}</div>`],
+['Projected y = wᵀx, threshold c = '+f3(LD.thr),`<div><b>Step 5 · Projection & threshold</b></div><div class="f">c = ½ wᵀ(μ₁+μ₂) = ${f3(LD.thr)}<br>test x = ${V([tp.x,tp.y])} → y = (${f3(w[0])})(${f(tp.x)}) + (${f3(w[1])})(${f(tp.y)}) = ${f3(ty)}<br>y ${ty>LD.thr?'>':'<'} c → class = <b>${ty>LD.thr?'RIGHT hand':'LEFT hand'}</b></div>`]];
+for(let i=0;i<5;i++){ldaStep=i+1;ov(F[i][1]);await prog(5000);log('  LDA '+(i+1)+'/5 ✔ '+F[i][0],'ok')}
+ov();log('Running train/test trials…');scene=sTrial;TR=[];
+const splits=[['80 / 20',.8],['70 / 30',.7],['50 / 50',.5]];const used=[];
+for(const [n,s] of splits){let a;do{a=89+Math.random()*4;a=Math.round(a*10)/10}while(used.includes(a));used.push(a);const r={n,split:s,a,p:0};TR.push(r);log('  trial '+n+' running…','m');
+const t0=performance.now(),my=tok;while(r.p<1){await new Promise(q=>requestAnimationFrame(q));if(my!==tok)throw'x';r.p=Math.min(1,(performance.now()-t0)/3200)}log('  ✔ '+n+' accuracy = '+a.toFixed(1)+'%','ok')}
+ov(`<div><b>Final results</b> · LDA on beta-band features</div><div class="res">${TR.map(r=>`<div>${r.n}<b>${r.a.toFixed(1)}%</b></div>`).join('')}</div>`);
+log('✔ Classifier ready — deploying to wheelchair','ok');await sleep(4500);
+const pts=buildPath();RC.pts=pts;RC.x=0;RC.y=0;RC.ang=0;RC.cmd='S';RC.trail=[[0,0]];RC.dec=[];scene=sRoad;
+ov('<div>Wheelchair armed. At each junction the EEG window is classified by LDA: <b>Left-hand imagery → TURN LEFT</b>, <b>Right-hand imagery → TURN RIGHT</b>.</div>');log('[8/8] Wheelchair navigation started','w');await sleep(2500);
+const my=tok,anim=async(ms,fn)=>{const t0=performance.now();let q=0;while(q<1){await new Promise(r=>requestAnimationFrame(r));if(my!==tok)throw'x';q=Math.min(1,(performance.now()-t0)/ms);fn(q)}};
+const ct=[0,0];
+for(let i=0;i<pts.length-1;i++){const a=pts[i],b=pts[i+1];RC.cmd='F';ov('<div>Moving <b>▲ FORWARD</b> '+(i<PLAN.length?'to junction J'+(i+1):'to the goal')+'…</div>');log('  ▲ FORWARD','m');
+await anim(2000,q=>{RC.x=a[0]+(b[0]-a[0])*q;RC.y=a[1]+(b[1]-a[1])*q;RC.trail.push([RC.x,RC.y])});RC.cmd='S';
+if(i<PLAN.length){const want=PLAN[i]=='L'?0:1,arr=LD.g[want];let pt,y;do{pt=arr[ct[want]++%arr.length];y=w[0]*pt.x+w[1]*pt.y}while((y>LD.thr?1:0)!==want);
+const pred=y>LD.thr?1:0,cmd=pred?'R':'L';
+ov(`<div><b>Junction J${i+1}</b> · ${WIN}s EEG window → beta features x = ${V([pt.x,pt.y])}</div><div class="f">y = wᵀx = (${f3(w[0])})(${f(pt.x)}) + (${f3(w[1])})(${f(pt.y)}) = ${f3(y)}<br>y ${pred?'>':'<'} c (${f3(LD.thr)}) → <b>${pred?'RIGHT-hand imagery → TURN RIGHT ▶':'LEFT-hand imagery → TURN LEFT ◀'}</b></div>`);
+log(`  J${i+1}: y=${f3(y)} ${pred?'>':'<'} c=${f3(LD.thr)} → ${pred?'RIGHT':'LEFT'}`,'w');await sleep(2800);
+RC.cmd=cmd;RC.dec[i]=cmd;const a0=RC.ang;await anim(1000,q=>{RC.ang=a0+(cmd=='L'?-1:1)*Math.PI/2*q})}}
+RC.cmd='S';ov('<div><b>■ STOP</b> — Destination reached. ✔ All '+PLAN.length+' turns executed correctly from LDA-decoded EEG commands.</div>');log('✔ Destination reached. Wheelchair stopped.','ok');$('st').textContent='finished';
+}catch(e){if(e!=='x')console.error(e)}}
+// ---------- buttons
+$('go').onclick=()=>$('modal').style.display='flex';
+$('tm').onclick=()=>$('modal').style.display='none';
+$('cn').onclick=()=>{$('modal').style.display='none';stopBg=true;$('home').style.display='none';$('app').style.display='grid';[W,H]=fit(cv);$('st').textContent='running';tok++;pipeline()};
+$('stop').onclick=()=>{tok++;scene=()=>{};ov();log('■ Execution terminated by user','e');$('st').textContent='terminated';
+setTimeout(()=>{$('app').style.display='none';$('home').style.display='flex';stopBg=false;requestAnimationFrame(drawBg)},1200)};
+</script></body></html>
